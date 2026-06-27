@@ -16,6 +16,7 @@ class Token(BaseModel):
     username: str
     full_name: Optional[str] = None
     user_id: str
+    theme_preference: Optional[str] = "light"
 
 
 # ---------- Users ----------
@@ -24,7 +25,7 @@ class UserCreate(BaseModel):
     password: str
     full_name: Optional[str] = None
     email: Optional[str] = None
-    role: str = "user"  # admin can set "admin" or "user"
+    role: str = "user"
 
 
 class UserUpdate(BaseModel):
@@ -32,6 +33,7 @@ class UserUpdate(BaseModel):
     email: Optional[str] = None
     is_active: Optional[bool] = None
     password: Optional[str] = None
+    theme_preference: Optional[str] = None
 
 
 class UserOut(BaseModel):
@@ -42,6 +44,7 @@ class UserOut(BaseModel):
     email: Optional[str] = None
     role: str
     is_active: bool
+    theme_preference: Optional[str] = "light"
     created_at: datetime
 
 
@@ -50,6 +53,23 @@ class TagOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: str
     name: str
+
+
+# ---------- Cost items ----------
+class CostItemCreate(BaseModel):
+    category: str
+    payment_method: str
+    amount: float
+    description: Optional[str] = None
+
+
+class CostItemOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: str
+    category: str
+    payment_method: str
+    amount: float
+    description: Optional[str] = None
 
 
 # ---------- Medicine ----------
@@ -66,7 +86,12 @@ class MedicineCreate(BaseModel):
     end_date: Optional[date] = None
     is_active: bool = True
     notes: Optional[str] = None
-    tags: List[str] = []  # tag names
+    tags: List[str] = []
+    quantity_remaining: Optional[int] = None
+    refill_threshold: Optional[int] = None
+    cost: Optional[float] = None
+    payment_method: Optional[str] = None
+    insurance_covered: bool = False
 
 
 class MedicineUpdate(BaseModel):
@@ -82,6 +107,11 @@ class MedicineUpdate(BaseModel):
     is_active: Optional[bool] = None
     notes: Optional[str] = None
     tags: Optional[List[str]] = None
+    quantity_remaining: Optional[int] = None
+    refill_threshold: Optional[int] = None
+    cost: Optional[float] = None
+    payment_method: Optional[str] = None
+    insurance_covered: Optional[bool] = None
 
 
 class MedicineOut(BaseModel):
@@ -101,27 +131,96 @@ class MedicineOut(BaseModel):
     photo: Optional[str] = None
     notes: Optional[str] = None
     tags: List[TagOut] = []
+    quantity_remaining: Optional[int] = None
+    refill_threshold: Optional[int] = None
+    cost: Optional[float] = None
+    payment_method: Optional[str] = None
+    insurance_covered: bool = False
     # denormalized, filled manually in router
     doctor_name: Optional[str] = None
     hospital_name: Optional[str] = None
     visit_date: Optional[date] = None
+    is_low_stock: bool = False
 
 
-# ---------- Prescription ----------
-class PrescriptionCreate(BaseModel):
-    doctor_name: str
-    hospital_name: str
-    visit_date: date
-    next_visit_date: Optional[date] = None
+# ---------- Lab tests ----------
+class LabTestCreate(BaseModel):
+    prescription_id: str
+    test_name: str
+    test_type: str = "lab"
+    test_date: Optional[date] = None
+    result_summary: Optional[str] = None
+    is_completed: bool = False
+
+
+class LabTestUpdate(BaseModel):
+    test_name: Optional[str] = None
+    test_type: Optional[str] = None
+    test_date: Optional[date] = None
+    result_summary: Optional[str] = None
+    is_completed: Optional[bool] = None
+
+
+class LabTestOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: str
+    prescription_id: str
+    test_name: str
+    test_type: str
+    test_date: Optional[date] = None
+    result_summary: Optional[str] = None
+    file_path: Optional[str] = None
+    is_completed: bool
+    doctor_name: Optional[str] = None
+    hospital_name: Optional[str] = None
+
+
+# ---------- Vaccinations ----------
+class VaccinationCreate(BaseModel):
+    vaccine_name: str
+    dose_number: Optional[int] = None
+    date_administered: date
+    next_due_date: Optional[date] = None
+    administered_at: Optional[str] = None
+    batch_number: Optional[str] = None
     notes: Optional[str] = None
 
 
+class VaccinationUpdate(BaseModel):
+    vaccine_name: Optional[str] = None
+    dose_number: Optional[int] = None
+    date_administered: Optional[date] = None
+    next_due_date: Optional[date] = None
+    administered_at: Optional[str] = None
+    batch_number: Optional[str] = None
+    notes: Optional[str] = None
+
+
+class VaccinationOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: str
+    vaccine_name: str
+    dose_number: Optional[int] = None
+    date_administered: date
+    next_due_date: Optional[date] = None
+    administered_at: Optional[str] = None
+    batch_number: Optional[str] = None
+    notes: Optional[str] = None
+    certificate_file: Optional[str] = None
+
+
+# ---------- Prescription ----------
 class PrescriptionUpdate(BaseModel):
     doctor_name: Optional[str] = None
     hospital_name: Optional[str] = None
     visit_date: Optional[date] = None
     next_visit_date: Optional[date] = None
     notes: Optional[str] = None
+    payment_method: Optional[str] = None
+    bp_systolic: Optional[int] = None
+    bp_diastolic: Optional[int] = None
+    weight_kg: Optional[float] = None
+    heart_rate: Optional[int] = None
 
 
 class PrescriptionOut(BaseModel):
@@ -133,10 +232,34 @@ class PrescriptionOut(BaseModel):
     next_visit_date: Optional[date] = None
     notes: Optional[str] = None
     prescription_image: Optional[str] = None
+    payment_method: Optional[str] = None
+    bp_systolic: Optional[int] = None
+    bp_diastolic: Optional[int] = None
+    weight_kg: Optional[float] = None
+    heart_rate: Optional[int] = None
     medicines: List[MedicineOut] = []
+    cost_items: List[CostItemOut] = []
+    lab_tests: List[LabTestOut] = []
+    total_cost: float = 0.0
 
 
 # ---------- Dashboard ----------
+class SpendingSummary(BaseModel):
+    year: int
+    cash_total: float
+    insurance_total: float
+    grand_total: float
+    by_category: dict = {}
+
+
+class LastVitals(BaseModel):
+    recorded_on: Optional[date] = None
+    bp_systolic: Optional[int] = None
+    bp_diastolic: Optional[int] = None
+    weight_kg: Optional[float] = None
+    heart_rate: Optional[int] = None
+
+
 class DashboardStats(BaseModel):
     total_medicines: int
     active_medicines: int
@@ -149,3 +272,24 @@ class DashboardStats(BaseModel):
     distinct_doctors: int
     distinct_hospitals: int
     medicines_ending_soon: List[MedicineOut] = []
+    low_stock_medicines: List[MedicineOut] = []
+    last_vitals: Optional[LastVitals] = None
+    spending: Optional[SpendingSummary] = None
+    upcoming_lab_tests: List[LabTestOut] = []
+    upcoming_vaccinations: List[VaccinationOut] = []
+
+
+# ---------- OCR ----------
+class OcrResult(BaseModel):
+    raw_text: str
+    guessed_medicine_name: Optional[str] = None
+    guessed_composition: Optional[str] = None
+    guessed_dose: Optional[str] = None
+    guessed_doctor_name: Optional[str] = None
+    guessed_hospital_name: Optional[str] = None
+
+
+# ---------- Version ----------
+class VersionInfo(BaseModel):
+    version: str
+    repo: Optional[str] = None

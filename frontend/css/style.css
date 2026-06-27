@@ -1,31 +1,59 @@
 :root{
-  --bg: #F4F6F7;
+  --bg: #F4F7FC;
   --surface: #FFFFFF;
-  --surface-2: #F8FAFA;
-  --border: #E3E8EA;
-  --text: #1A2B33;
-  --text-soft: #5C7079;
-  --text-faint: #8FA0A6;
+  --surface-2: #F7F9FD;
+  --border: #E2E8F2;
+  --text: #16213D;
+  --text-soft: #5C6B85;
+  --text-faint: #93A1B8;
 
-  --navy: #0B2530;
-  --navy-soft: #123747;
-  --teal: #0F7A72;
-  --teal-dark: #0B5C56;
-  --teal-light: #E4F4F2;
+  --navy: #0B1A4D;
+  --navy-soft: #142563;
+  --teal: #155DFD;        /* primary brand blue, sampled from logo */
+  --teal-dark: #0F45C2;
+  --teal-light: #E8F0FF;
   --amber: #C8801A;
   --amber-light: #FBF0DD;
   --red: #C24545;
   --red-light: #FBEAEA;
+  --green: #16916F;
+  --green-light: #E3F6EF;
 
   --radius-sm: 6px;
   --radius: 10px;
   --radius-lg: 16px;
-  --shadow-sm: 0 1px 2px rgba(11,37,48,0.06);
-  --shadow: 0 4px 16px rgba(11,37,48,0.08);
-  --shadow-lg: 0 12px 32px rgba(11,37,48,0.14);
+  --shadow-sm: 0 1px 2px rgba(11,26,77,0.06);
+  --shadow: 0 4px 16px rgba(11,26,77,0.08);
+  --shadow-lg: 0 12px 32px rgba(11,26,77,0.16);
 
   --font: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   --mono: 'JetBrains Mono', 'SF Mono', Consolas, monospace;
+}
+
+[data-theme="dark"]{
+  --bg: #0B1322;
+  --surface: #121B2E;
+  --surface-2: #162035;
+  --border: #243352;
+  --text: #E7ECF7;
+  --text-soft: #9AABCB;
+  --text-faint: #6B7BA0;
+
+  --navy: #060B19;
+  --navy-soft: #0E1830;
+  --teal: #3D7BFF;
+  --teal-dark: #2E63DB;
+  --teal-light: #18294D;
+  --amber: #E0A23E;
+  --amber-light: #2E2412;
+  --red: #E16464;
+  --red-light: #34191A;
+  --green: #2FBE93;
+  --green-light: #102B23;
+
+  --shadow-sm: 0 1px 2px rgba(0,0,0,0.3);
+  --shadow: 0 4px 16px rgba(0,0,0,0.4);
+  --shadow-lg: 0 12px 32px rgba(0,0,0,0.55);
 }
 
 *{box-sizing:border-box;}
@@ -37,6 +65,7 @@ body{
   font-size:14.5px;
   line-height:1.5;
   -webkit-font-smoothing:antialiased;
+  transition:background .2s, color .2s;
 }
 a{color:var(--teal-dark);text-decoration:none;}
 h1,h2,h3,h4{margin:0;font-weight:650;letter-spacing:-0.01em;color:var(--navy);}
@@ -272,4 +301,46 @@ table.data-table tr:last-child td{border-bottom:none;}
 @media(max-width:840px){
   .sidebar{position:fixed;height:100vh;}
   .form-grid{grid-template-columns:1fr;}
+}
+
+/* ---------- MediCal additions ---------- */
+.logo-mark{overflow:hidden;background:none !important;}
+.logo-mark img{width:100%;height:100%;object-fit:contain;display:block;}
+
+.badge-warning{background:var(--amber-light);color:var(--amber);}
+
+.theme-toggle{
+  display:flex;align-items:center;gap:8px;width:100%;
+  padding:9px 12px;border-radius:var(--radius-sm);
+  background:transparent;border:none;color:#A9C4C1;font-size:13px;font-weight:500;cursor:pointer;
+}
+.theme-toggle:hover{background:rgba(255,255,255,0.06);color:#fff;}
+.theme-toggle svg{width:17px;height:17px;flex-shrink:0;}
+
+.version-footer{
+  font-size:10.5px;color:var(--text-faint);display:flex;align-items:center;gap:8px;
+  padding:10px 14px 4px;justify-content:space-between;white-space:nowrap;overflow:hidden;
+}
+.update-pill{
+  font-size:10px;font-weight:700;background:var(--amber-light);color:var(--amber);
+  padding:2px 7px;border-radius:99px;cursor:pointer;
+}
+
+.vitals-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;}
+.vital-box{background:var(--surface-2);border:1px solid var(--border);border-radius:var(--radius);padding:12px;text-align:center;}
+.vital-box .v-value{font-size:18px;font-weight:750;color:var(--navy);}
+.vital-box .v-label{font-size:11px;color:var(--text-soft);margin-top:2px;}
+
+.cost-row{display:grid;grid-template-columns:1.2fr 1fr 1fr 1.4fr auto;gap:8px;align-items:end;margin-bottom:8px;}
+.cost-row select,.cost-row input{padding:8px 9px;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:12.5px;background:var(--surface);color:var(--text);}
+
+.spend-bar-track{height:9px;background:var(--surface-2);border-radius:99px;overflow:hidden;display:flex;border:1px solid var(--border);}
+.spend-bar-cash{background:var(--teal);height:100%;}
+.spend-bar-insurance{background:var(--green);height:100%;}
+.legend-dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:6px;}
+
+.low-stock-row{border-left:3px solid var(--amber);}
+
+@media(prefers-reduced-motion: reduce){
+  *{transition:none !important;animation:none !important;}
 }

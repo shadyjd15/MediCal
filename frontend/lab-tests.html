@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Lab Tests & Imaging — MediCal</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<script src="/js/theme.js"></script>
+<link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+<div class="app-shell">
+  <div id="sidebarMount"></div>
+  <div class="main-area">
+    <div class="topbar">
+      <div>
+        <h1>Lab Tests & Imaging</h1>
+        <div class="topbar-sub">Tests requested by your doctors, with results and files</div>
+      </div>
+      <button class="btn btn-primary" id="addBtn">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        Add test
+      </button>
+    </div>
+    <div class="content">
+      <div class="search-bar">
+        <select id="typeFilter">
+          <option value="">All types</option>
+          <option value="lab">Lab</option>
+          <option value="imaging">Imaging</option>
+        </select>
+        <select id="statusFilter">
+          <option value="">All statuses</option>
+          <option value="pending">Pending</option>
+          <option value="completed">Completed</option>
+        </select>
+      </div>
+      <div class="med-list" id="testList"></div>
+    </div>
+  </div>
+</div>
+
+<!-- Add/Edit Test Modal -->
+<div class="modal-overlay" id="testModal" style="display:none;">
+  <div class="modal">
+    <div class="modal-header">
+      <h3 id="testModalTitle">Add lab test / imaging</h3>
+      <button class="btn btn-ghost btn-icon" onclick="closeModal()">✕</button>
+    </div>
+    <form id="testForm">
+      <div class="modal-body">
+        <div class="field field-spaced">
+          <label>Linked visit <span class="req">*</span></label>
+          <select id="t_prescription_id" required></select>
+        </div>
+        <div class="form-grid">
+          <div class="field field-spaced">
+            <label>Test name <span class="req">*</span></label>
+            <input type="text" id="t_name" required placeholder="e.g. Complete Blood Count" />
+          </div>
+          <div class="field field-spaced">
+            <label>Type</label>
+            <select id="t_type">
+              <option value="lab">Lab test</option>
+              <option value="imaging">Imaging (X-Ray, MRI, CT, Ultrasound…)</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-grid">
+          <div class="field field-spaced">
+            <label>Test date</label>
+            <input type="date" id="t_date" />
+          </div>
+          <div class="field field-spaced">
+            <label><input type="checkbox" id="t_completed" style="width:auto;margin-right:6px;" />Completed / results in</label>
+          </div>
+        </div>
+        <div class="field field-spaced">
+          <label>Result summary</label>
+          <textarea id="t_result" placeholder="e.g. Hemoglobin 13.5 g/dL, WBC normal range…"></textarea>
+        </div>
+        <div class="field field-spaced">
+          <label>Result file (PDF or image)</label>
+          <input type="file" id="t_file" accept="image/*,application/pdf" style="display:none;" />
+          <div class="file-drop" id="t_fileDrop">Tap to upload the test result or scan</div>
+          <div id="t_filePreview" class="helptext"></div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+        <button type="submit" class="btn btn-primary" id="saveBtn">Save</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script src="/js/api.js"></script>
+<script src="/js/sidebar.js"></script>
+<script>
+Auth.requireAuth();
+mountSidebar("labtests");
+
+let editingId = null;
+let prescriptionsCache = [];
+let testsCache = [];
+
+function testRow(t) {
+  const typeBadge = t.test_type === "imaging" ? `<span class="badge badge-active">Imaging</span>` : `<span class="badge badge-active">Lab</span>`;
+  const statusBadge = t.is_completed ? `<span class="badge badge-active">Completed</span>` : `<span class="badge badge-warning">Pending</span>`;
+  return `
+  <div class="med-row">
+    <div class="med-thumb">${t.file_path ? (t.file_path.endsWith(".pdf") ? ICONS.flask : `<img src="${t.file_path}"/>`) : ICONS.flask}</div>
+    <div class="med-main">
+      <div class="med-name">${t.test_name} ${typeBadge} ${statusBadge}</div>
+      <div class="med-meta">Dr. ${t.doctor_name || "—"} · ${t.hospital_name || "—"} ${t.test_date ? "· " + fmtDate(t.test_date) : ""}</div>
+      ${t.result_summary ? `<div class="med-meta">${t.result_summary}</div>` : ""}
+      ${t.file_path ? `<a href="${t.file_path}" target="_blank" style="font-size:12px;">View result file →</a>` : ""}
+    </div>
+    <div style="display:flex;gap:6px;">
+      <button class="btn btn-secondary btn-sm" onclick="openEdit('${t.id}')">Edit</button>
+      <button class="btn btn-danger btn-sm" onclick="deleteTest('${t.id}')">Delete</button>
+    </div>
+  </div>`;
+}
+
+async function loadTests() {
+  const list = document.getElementById("testList");
+  list.innerHTML = Array(3).fill('<div class="skeleton" style="height:64px;"></div>').join("");
+  try {
+    testsCache = await Api.listLabTests();
+    let filtered = testsCache;
+    const typeF = document.getElementById("typeFilter").value;
+    const statusF = document.getElementById("statusFilter").value;
+    if (typeF) filtered = filtered.filter(t => t.test_type === typeF);
+    if (statusF === "completed") filtered = filtered.filter(t => t.is_completed);
+    if (statusF === "pending") filtered = filtered.filter(t => !t.is_completed);
+
+    if (!filtered.length) {
+      list.innerHTML = `<div class="empty-state">${ICONS.flask}<div>No tests recorded yet.</div></div>`;
+      return;
+    }
+    list.innerHTML = filtered.map(testRow).join("");
+  } catch (err) { showToast(err.message, "error"); }
+}
+document.getElementById("typeFilter").addEventListener("change", loadTests);
+document.getElementById("statusFilter").addEventListener("change", loadTests);
+
+async function loadPrescriptionsIntoSelect(selectedId = null) {
+  const sel = document.getElementById("t_prescription_id");
+  prescriptionsCache = await Api.listPrescriptions();
+  if (!prescriptionsCache.length) {
+    sel.innerHTML = `<option value="">No visits yet — add one first</option>`;
+    return;
+  }
+  sel.innerHTML = prescriptionsCache.map(p =>
+    `<option value="${p.id}">${fmtDate(p.visit_date)} — Dr. ${p.doctor_name} (${p.hospital_name})</option>`
+  ).join("");
+  if (selectedId) sel.value = selectedId;
+}
+
+document.getElementById("addBtn").addEventListener("click", async () => {
+  editingId = null;
+  document.getElementById("testModalTitle").textContent = "Add lab test / imaging";
+  document.getElementById("testForm").reset();
+  document.getElementById("t_filePreview").textContent = "";
+  await loadPrescriptionsIntoSelect();
+  document.getElementById("testModal").style.display = "flex";
+});
+
+async function openEdit(id) {
+  const t = testsCache.find(x => x.id === id);
+  if (!t) return;
+  editingId = id;
+  document.getElementById("testModalTitle").textContent = "Edit lab test / imaging";
+  await loadPrescriptionsIntoSelect(t.prescription_id);
+  document.getElementById("t_name").value = t.test_name;
+  document.getElementById("t_type").value = t.test_type;
+  document.getElementById("t_date").value = t.test_date || "";
+  document.getElementById("t_completed").checked = t.is_completed;
+  document.getElementById("t_result").value = t.result_summary || "";
+  document.getElementById("t_filePreview").innerHTML = t.file_path ? `<a href="${t.file_path}" target="_blank">Current file →</a>` : "";
+  document.getElementById("testModal").style.display = "flex";
+}
+
+function closeModal() { document.getElementById("testModal").style.display = "none"; }
+
+document.getElementById("t_fileDrop").addEventListener("click", () => document.getElementById("t_file").click());
+document.getElementById("t_file").addEventListener("change", (e) => {
+  const f = e.target.files[0];
+  if (f) document.getElementById("t_filePreview").textContent = `Selected: ${f.name}`;
+});
+
+document.getElementById("testForm").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const prescriptionId = document.getElementById("t_prescription_id").value;
+  if (!prescriptionId) { showToast("Please select a linked visit", "error"); return; }
+  const btn = document.getElementById("saveBtn");
+  btn.disabled = true;
+  try {
+    if (!editingId) {
+      const fd = new FormData();
+      fd.append("prescription_id", prescriptionId);
+      fd.append("test_name", document.getElementById("t_name").value);
+      fd.append("test_type", document.getElementById("t_type").value);
+      if (document.getElementById("t_date").value) fd.append("test_date", document.getElementById("t_date").value);
+      fd.append("is_completed", document.getElementById("t_completed").checked);
+      fd.append("result_summary", document.getElementById("t_result").value);
+      const file = document.getElementById("t_file").files[0];
+      if (file) fd.append("result_file", file);
+      await Api.createLabTest(fd);
+      showToast("Test added", "success");
+    } else {
+      await Api.updateLabTest(editingId, {
+        test_name: document.getElementById("t_name").value,
+        test_type: document.getElementById("t_type").value,
+        test_date: document.getElementById("t_date").value || null,
+        is_completed: document.getElementById("t_completed").checked,
+        result_summary: document.getElementById("t_result").value,
+      });
+      const file = document.getElementById("t_file").files[0];
+      if (file) {
+        const fd = new FormData();
+        fd.append("result_file", file);
+        await Api.uploadLabTestFile(editingId, fd);
+      }
+      showToast("Test updated", "success");
+    }
+    closeModal();
+    loadTests();
+  } catch (err) { showToast(err.message, "error"); }
+  finally { btn.disabled = false; }
+});
+
+async function deleteTest(id) {
+  if (!confirm("Delete this test record?")) return;
+  try {
+    await Api.deleteLabTest(id);
+    showToast("Deleted", "success");
+    loadTests();
+  } catch (err) { showToast(err.message, "error"); }
+}
+
+loadTests();
+</script>
+</body>
+</html>

@@ -3,8 +3,9 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Settings — MedTrack</title>
+<title>Settings — MediCal</title>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<script src="/js/theme.js"></script>
 <link rel="stylesheet" href="/css/style.css" />
 </head>
 <body>
@@ -29,7 +30,18 @@
         </div>
       </div>
 
-      <div class="card">
+      <div class="card" style="margin-bottom:18px;">
+        <div class="card-header"><h3>Appearance</h3></div>
+        <div style="display:flex;align-items:center;justify-content:space-between;">
+          <div>
+            <div style="font-weight:600;font-size:13.5px;">Dark mode</div>
+            <div class="topbar-sub">Switch between light and dark themes</div>
+          </div>
+          <button class="btn btn-secondary" id="appearanceToggleBtn"></button>
+        </div>
+      </div>
+
+      <div class="card" style="margin-bottom:18px;">
         <div class="card-header"><h3>Change password</h3></div>
         <form id="pwForm">
           <div class="field field-spaced">
@@ -68,6 +80,18 @@ document.getElementById("pwForm").addEventListener("submit", async (e) => {
     showToast("Password updated", "success");
     document.getElementById("pwForm").reset();
   } catch (err) { showToast(err.message, "error"); }
+});
+
+function renderAppearanceBtn() {
+  const isDark = document.documentElement.getAttribute("data-theme") === "dark";
+  document.getElementById("appearanceToggleBtn").textContent = isDark ? "Switch to light mode" : "Switch to dark mode";
+}
+renderAppearanceBtn();
+document.getElementById("appearanceToggleBtn").addEventListener("click", async () => {
+  toggleTheme();
+  renderAppearanceBtn();
+  const theme = document.documentElement.getAttribute("data-theme");
+  try { await Api.updateMyTheme(theme); } catch (err) { /* non-fatal */ }
 });
 </script>
 </body>

@@ -3,8 +3,9 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Dashboard — MedTrack</title>
+<title>Dashboard — MediCal</title>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<script src="/js/theme.js"></script>
 <link rel="stylesheet" href="/css/style.css" />
 </head>
 <body>
@@ -14,7 +15,7 @@
     <div class="topbar">
       <div>
         <h1>Dashboard</h1>
-        <div class="topbar-sub">Overview of your medications and visits</div>
+        <div class="topbar-sub">Overview of your medications, visits and spending</div>
       </div>
       <a href="/medicines.html?action=add" class="btn btn-primary">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
@@ -24,14 +25,28 @@
     <div class="content">
       <div class="kpi-grid" id="kpiGrid"></div>
 
-      <div style="display:grid;grid-template-columns:1.3fr 1fr;gap:18px;" id="lowerGrid">
+      <div style="display:grid;grid-template-columns:1.3fr 1fr;gap:18px;margin-bottom:18px;">
         <div class="card">
           <div class="card-header"><h3>Medicines ending soon</h3></div>
           <div id="endingSoonList" class="med-list"></div>
         </div>
         <div class="card">
-          <div class="card-header"><h3>Next visit</h3></div>
-          <div id="nextVisitBox"></div>
+          <div class="card-header"><h3>Last recorded vitals</h3></div>
+          <div id="vitalsBox"></div>
+        </div>
+      </div>
+
+      <div style="display:grid;grid-template-columns:1.3fr 1fr;gap:18px;">
+        <div class="card">
+          <div class="card-header">
+            <h3 id="spendTitle">Spending this year</h3>
+            <a href="/reports.html" class="btn btn-secondary btn-sm">Full report</a>
+          </div>
+          <div id="spendBox"></div>
+        </div>
+        <div class="card">
+          <div class="card-header"><h3>Low stock medicines</h3></div>
+          <div id="lowStockList" class="med-list"></div>
         </div>
       </div>
     </div>
@@ -53,6 +68,12 @@ function kpiCard(icon, color, value, label, foot) {
   </div>`;
 }
 
+function vitalBox(value, label) {
+  return `<div class="vital-box"><div class="v-value">${value ?? "—"}</div><div class="v-label">${label}</div></div>`;
+}
+
+function money(n) { return `$${(n || 0).toFixed(2)}`; }
+
 async function load() {
   const grid = document.getElementById("kpiGrid");
   grid.innerHTML = Array(4).fill('<div class="kpi-card"><div class="skeleton" style="height:70px;"></div></div>').join("");
@@ -61,12 +82,13 @@ async function load() {
     const s = await Api.dashboardStats();
 
     grid.innerHTML = [
-      kpiCard(ICONS.pill, "#0F7A72", s.total_medicines, "Total medicines", `${s.active_medicines} currently active`),
+      kpiCard(ICONS.pill, "#155DFD", s.total_medicines, "Total medicines", `${s.active_medicines} currently active`),
       kpiCard(ICONS.visits, "#C8801A", s.total_hospital_visits, "Hospital visits", s.distinct_hospitals ? `${s.distinct_hospitals} hospitals · ${s.distinct_doctors} doctors` : ""),
-      kpiCard(ICONS.prescription, "#0B5C56", fmtDate(s.last_visit_date), "Last visit date", s.last_visit_doctor ? `with Dr. ${s.last_visit_doctor}` : "No visits yet"),
+      kpiCard(ICONS.prescription, "#0F45C2", fmtDate(s.last_visit_date), "Last visit date", s.last_visit_doctor ? `with Dr. ${s.last_visit_doctor}` : "No visits yet"),
       kpiCard(ICONS.dashboard, "#C24545", s.next_medicine_name || "—", "Next medicine to take", s.next_medicine_time || ""),
     ].join("");
 
+    // Ending soon
     const endingBox = document.getElementById("endingSoonList");
     if (!s.medicines_ending_soon.length) {
       endingBox.innerHTML = `<div class="empty-state">${ICONS.pill}<div>No medicines ending soon</div></div>`;
@@ -82,18 +104,54 @@ async function load() {
       `).join("");
     }
 
-    const nextVisitBox = document.getElementById("nextVisitBox");
-    if (s.next_visit_date) {
-      nextVisitBox.innerHTML = `
-        <div style="display:flex;align-items:center;gap:14px;">
-          <div class="kpi-icon" style="background:#C8801A22;color:#C8801A;width:46px;height:46px;">${ICONS.visits}</div>
-          <div>
-            <div style="font-size:18px;font-weight:700;color:var(--navy);">${fmtDate(s.next_visit_date)}</div>
-            <div class="topbar-sub">Scheduled follow-up</div>
-          </div>
-        </div>`;
+    // Vitals
+    const vitalsBox = document.getElementById("vitalsBox");
+    const v = s.last_vitals;
+    if (!v || (!v.bp_systolic && !v.weight_kg && !v.heart_rate)) {
+      vitalsBox.innerHTML = `<div class="empty-state">${ICONS.visits}<div>No vitals recorded yet. Add them on your next visit.</div></div>`;
     } else {
-      nextVisitBox.innerHTML = `<div class="empty-state">${ICONS.visits}<div>No upcoming visit scheduled</div></div>`;
+      vitalsBox.innerHTML = `
+        <div class="vitals-grid">
+          ${vitalBox(v.bp_systolic && v.bp_diastolic ? `${v.bp_systolic}/${v.bp_diastolic}` : "—", "Blood pressure")}
+          ${vitalBox(v.weight_kg ? `${v.weight_kg} kg` : "—", "Weight")}
+          ${vitalBox(v.heart_rate ? `${v.heart_rate} bpm` : "—", "Heart rate")}
+        </div>
+        <div class="kpi-foot" style="margin-top:10px;">Recorded on ${fmtDate(v.recorded_on)}</div>`;
+    }
+
+    // Spending
+    const spendBox = document.getElementById("spendBox");
+    document.getElementById("spendTitle").textContent = `Spending in ${s.spending.year}`;
+    const total = s.spending.grand_total || 1;
+    const cashPct = (s.spending.cash_total / total) * 100;
+    const insPct = (s.spending.insurance_total / total) * 100;
+    spendBox.innerHTML = `
+      <div class="kpi-value" style="margin-bottom:6px;">${money(s.spending.grand_total)}</div>
+      <div class="spend-bar-track">
+        <div class="spend-bar-cash" style="width:${cashPct}%;"></div>
+        <div class="spend-bar-insurance" style="width:${insPct}%;"></div>
+      </div>
+      <div style="display:flex;justify-content:space-between;margin-top:10px;font-size:12.5px;">
+        <div><span class="legend-dot" style="background:var(--teal);"></span>Cash · ${money(s.spending.cash_total)}</div>
+        <div><span class="legend-dot" style="background:var(--green);"></span>Insurance · ${money(s.spending.insurance_total)}</div>
+      </div>
+      ${s.spending.grand_total === 0 ? `<div class="kpi-foot" style="margin-top:10px;">No costs logged yet for ${s.spending.year}. Add amounts when recording a visit.</div>` : ""}
+    `;
+
+    // Low stock
+    const lowStockList = document.getElementById("lowStockList");
+    if (!s.low_stock_medicines.length) {
+      lowStockList.innerHTML = `<div class="empty-state">${ICONS.pill}<div>All tracked medicines have enough stock</div></div>`;
+    } else {
+      lowStockList.innerHTML = s.low_stock_medicines.map(m => `
+        <div class="med-row low-stock-row">
+          <div class="med-thumb">${m.photo ? `<img src="${m.photo}"/>` : ICONS.pill}</div>
+          <div class="med-main">
+            <div class="med-name">${m.name} <span class="badge badge-warning">Low stock</span></div>
+            <div class="med-meta">${m.quantity_remaining ?? 0} remaining · refill below ${m.refill_threshold}</div>
+          </div>
+        </div>
+      `).join("");
     }
   } catch (err) {
     showToast(err.message, "error");

@@ -3,8 +3,9 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Search — MedTrack</title>
+<title>Search — MediCal</title>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<script src="/js/theme.js"></script>
 <link rel="stylesheet" href="/css/style.css" />
 </head>
 <body>
@@ -55,6 +56,13 @@
           <div class="field">
             <label>Visit to date</label>
             <input type="date" id="s_to" />
+          </div>
+          <div class="field">
+            <label>Stock level</label>
+            <select id="s_low_stock">
+              <option value="">Any</option>
+              <option value="true">Low stock only</option>
+            </select>
           </div>
         </div>
         <div style="display:flex;gap:10px;margin-top:16px;">
@@ -109,6 +117,7 @@ async function runSearch() {
     active_only: document.getElementById("s_active").value,
     from_date: document.getElementById("s_from").value,
     to_date: document.getElementById("s_to").value,
+    low_stock_only: document.getElementById("s_low_stock").value,
   };
   try {
     const meds = await Api.listMedicines(params);
@@ -118,7 +127,7 @@ async function runSearch() {
 
 document.getElementById("searchBtn").addEventListener("click", runSearch);
 document.getElementById("clearBtn").addEventListener("click", () => {
-  ["s_q","s_composition","s_doctor","s_hospital","s_tag","s_active","s_from","s_to"].forEach(id => document.getElementById(id).value = "");
+  ["s_q","s_composition","s_doctor","s_hospital","s_tag","s_active","s_from","s_to","s_low_stock"].forEach(id => document.getElementById(id).value = "");
   runSearch();
 });
 document.getElementById("altBtn").addEventListener("click", async () => {

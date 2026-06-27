@@ -67,3 +67,14 @@ def change_my_password(payload: dict, db: Session = Depends(get_db), current_use
     current_user.hashed_password = auth.hash_password(new_password)
     db.commit()
     return {"ok": True}
+
+
+@router.put("/me/theme", response_model=schemas.UserOut)
+def update_my_theme(payload: dict, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_user)):
+    theme = payload.get("theme_preference")
+    if theme not in ("light", "dark"):
+        raise HTTPException(status_code=400, detail="theme_preference must be 'light' or 'dark'")
+    current_user.theme_preference = theme
+    db.commit()
+    db.refresh(current_user)
+    return current_user

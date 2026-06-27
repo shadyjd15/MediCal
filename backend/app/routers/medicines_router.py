@@ -1,7 +1,7 @@
 import os
 import shutil
 import uuid
-from datetime import date, timedelta
+from datetime import date
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Query
@@ -24,11 +24,20 @@ def _scope_query(db: Session, user: models.User):
     return q
 
 
+def _enum_val(v):
+    return v.value if hasattr(v, "value") else v
+
+
 def _to_out(m: models.Medicine) -> schemas.MedicineOut:
     out = schemas.MedicineOut.model_validate(m)
     out.doctor_name = m.prescription.doctor_name
     out.hospital_name = m.prescription.hospital_name
     out.visit_date = m.prescription.visit_date
+    out.payment_method = _enum_val(m.payment_method)
+    out.is_low_stock = (
+        m.quantity_remaining is not None and m.refill_threshold is not None
+        and m.quantity_remaining <= m.refill_threshold
+    )
     return out
 
 
@@ -49,12 +58,13 @@ def _get_or_create_tags(db: Session, tag_names: List[str]) -> List[models.Sympto
 
 @router.get("", response_model=List[schemas.MedicineOut])
 def list_medicines(
-    q: Optional[str] = Query(None, description="free text search across name/composition/manufacturer"),
+    q: Optional[str] = Query(None),
     doctor: Optional[str] = None,
     hospital: Optional[str] = None,
     tag: Optional[str] = None,
     composition: Optional[str] = None,
     active_only: Optional[bool] = None,
+    low_stock_only: Optional[bool] = None,
     from_date: Optional[date] = None,
     to_date: Optional[date] = None,
     db: Session = Depends(get_db),
@@ -87,12 +97,14 @@ def list_medicines(
         query = query.join(models.Medicine.tags).filter(models.SymptomTag.name.ilike(f"%{tag}%"))
 
     meds = query.order_by(models.Medicine.created_at.desc()).all()
-    return [_to_out(m) for m in meds]
+    out = [_to_out(m) for m in meds]
+    if low_stock_only:
+        out = [m for m in out if m.is_low_stock]
+    return out
 
 
 @router.get("/by-composition/{composition}", response_model=List[schemas.MedicineOut])
 def find_by_composition(composition: str, db: Session = Depends(get_db), user: models.User = Depends(auth.get_current_user)):
-    """Find alternate medicines (any user's history visible to admin, own history for users) sharing the same composition."""
     query = _scope_query(db, user).filter(models.Medicine.composition.ilike(f"%{composition}%"))
     meds = query.all()
     return [_to_out(m) for m in meds]
@@ -112,7 +124,12 @@ def create_medicine(
     end_date: Optional[date] = Form(None),
     is_active: bool = Form(True),
     notes: Optional[str] = Form(None),
-    tags: Optional[str] = Form(None),  # comma separated
+    tags: Optional[str] = Form(None),
+    quantity_remaining: Optional[int] = Form(None),
+    refill_threshold: Optional[int] = Form(None),
+    cost: Optional[float] = Form(None),
+    payment_method: Optional[str] = Form(None),
+    insurance_covered: bool = Form(False),
     photo: Optional[UploadFile] = File(None),
     db: Session = Depends(get_db),
     user: models.User = Depends(auth.get_current_user),
@@ -146,6 +163,11 @@ def create_medicine(
         is_active=is_active,
         notes=notes,
         photo=photo_path,
+        quantity_remaining=quantity_remaining,
+        refill_threshold=refill_threshold,
+        cost=cost,
+        payment_method=payment_method or None,
+        insurance_covered=insurance_covered,
     )
     if tags:
         med.tags = _get_or_create_tags(db, tags.split(","))
@@ -175,6 +197,22 @@ def update_medicine(med_id: str, payload: schemas.MedicineUpdate, db: Session = 
         setattr(med, k, v)
     if tag_names is not None:
         med.tags = _get_or_create_tags(db, tag_names)
+    db.commit()
+    db.refresh(med)
+    return _to_out(med)
+
+
+@router.post("/{med_id}/refill", response_model=schemas.MedicineOut)
+def adjust_refill(med_id: str, payload: dict, db: Session = Depends(get_db), user: models.User = Depends(auth.get_current_user)):
+    """Set quantity_remaining directly, or add/subtract via 'delta'."""
+    med = _scope_query(db, user).filter(models.Medicine.id == med_id).first()
+    if not med:
+        raise HTTPException(status_code=404, detail="Medicine not found")
+    if "quantity_remaining" in payload:
+        med.quantity_remaining = int(payload["quantity_remaining"])
+    elif "delta" in payload:
+        current = med.quantity_remaining or 0
+        med.quantity_remaining = max(0, current + int(payload["delta"]))
     db.commit()
     db.refresh(med)
     return _to_out(med)

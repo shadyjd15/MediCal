@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Vaccinations — MediCal</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<script src="/js/theme.js"></script>
+<link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+<div class="app-shell">
+  <div id="sidebarMount"></div>
+  <div class="main-area">
+    <div class="topbar">
+      <div>
+        <h1>Vaccinations</h1>
+        <div class="topbar-sub">Your vaccination history and upcoming doses</div>
+      </div>
+      <button class="btn btn-primary" id="addBtn">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        Add vaccination
+      </button>
+    </div>
+    <div class="content">
+      <div class="med-list" id="vacList"></div>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="vacModal" style="display:none;">
+  <div class="modal">
+    <div class="modal-header">
+      <h3 id="vacModalTitle">Add vaccination</h3>
+      <button class="btn btn-ghost btn-icon" onclick="closeModal()">✕</button>
+    </div>
+    <form id="vacForm">
+      <div class="modal-body">
+        <div class="form-grid">
+          <div class="field field-spaced">
+            <label>Vaccine name <span class="req">*</span></label>
+            <input type="text" id="v_name" required placeholder="e.g. Influenza, Tetanus, COVID-19" />
+          </div>
+          <div class="field field-spaced">
+            <label>Dose number</label>
+            <input type="number" id="v_dose_number" placeholder="e.g. 1, 2, booster=3" />
+          </div>
+        </div>
+        <div class="form-grid">
+          <div class="field field-spaced">
+            <label>Date administered <span class="req">*</span></label>
+            <input type="date" id="v_date" required />
+          </div>
+          <div class="field field-spaced">
+            <label>Next dose due</label>
+            <input type="date" id="v_next_due" />
+          </div>
+        </div>
+        <div class="form-grid">
+          <div class="field field-spaced">
+            <label>Administered at</label>
+            <input type="text" id="v_location" placeholder="Hospital / clinic / pharmacy" />
+          </div>
+          <div class="field field-spaced">
+            <label>Batch number</label>
+            <input type="text" id="v_batch" />
+          </div>
+        </div>
+        <div class="field field-spaced">
+          <label>Notes</label>
+          <textarea id="v_notes"></textarea>
+        </div>
+        <div class="field field-spaced">
+          <label>Certificate (optional)</label>
+          <input type="file" id="v_cert" accept="image/*,application/pdf" style="display:none;" />
+          <div class="file-drop" id="v_certDrop">Tap to upload vaccination certificate</div>
+          <div id="v_certPreview" class="helptext"></div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+        <button type="submit" class="btn btn-primary" id="saveBtn">Save</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script src="/js/api.js"></script>
+<script src="/js/sidebar.js"></script>
+<script>
+Auth.requireAuth();
+mountSidebar("vaccinations");
+
+let editingId = null;
+let vacCache = [];
+
+function vacRow(v) {
+  const overdue = v.next_due_date && new Date(v.next_due_date) < new Date();
+  return `
+  <div class="med-row">
+    <div class="med-thumb">${ICONS.vaccine}</div>
+    <div class="med-main">
+      <div class="med-name">${v.vaccine_name}${v.dose_number ? ` — Dose ${v.dose_number}` : ""} ${overdue ? `<span class="badge badge-warning">Next dose overdue</span>` : ""}</div>
+      <div class="med-meta">Administered ${fmtDate(v.date_administered)}${v.administered_at ? " at " + v.administered_at : ""}</div>
+      ${v.next_due_date ? `<div class="med-meta">Next due: ${fmtDate(v.next_due_date)}</div>` : ""}
+      ${v.certificate_file ? `<a href="${v.certificate_file}" target="_blank" style="font-size:12px;">View certificate →</a>` : ""}
+    </div>
+    <div style="display:flex;gap:6px;">
+      <button class="btn btn-secondary btn-sm" onclick="openEdit('${v.id}')">Edit</button>
+      <button class="btn btn-danger btn-sm" onclick="deleteVac('${v.id}')">Delete</button>
+    </div>
+  </div>`;
+}
+
+async function loadVacs() {
+  const list = document.getElementById("vacList");
+  list.innerHTML = Array(3).fill('<div class="skeleton" style="height:64px;"></div>').join("");
+  try {
+    vacCache = await Api.listVaccinations();
+    if (!vacCache.length) {
+      list.innerHTML = `<div class="empty-state">${ICONS.vaccine}<div>No vaccination records yet.</div></div>`;
+      return;
+    }
+    list.innerHTML = vacCache.map(vacRow).join("");
+  } catch (err) { showToast(err.message, "error"); }
+}
+
+document.getElementById("addBtn").addEventListener("click", () => {
+  editingId = null;
+  document.getElementById("vacModalTitle").textContent = "Add vaccination";
+  document.getElementById("vacForm").reset();
+  document.getElementById("v_certPreview").textContent = "";
+  document.getElementById("vacModal").style.display = "flex";
+});
+
+function openEdit(id) {
+  const v = vacCache.find(x => x.id === id);
+  if (!v) return;
+  editingId = id;
+  document.getElementById("vacModalTitle").textContent = "Edit vaccination";
+  document.getElementById("v_name").value = v.vaccine_name;
+  document.getElementById("v_dose_number").value = v.dose_number || "";
+  document.getElementById("v_date").value = v.date_administered;
+  document.getElementById("v_next_due").value = v.next_due_date || "";
+  document.getElementById("v_location").value = v.administered_at || "";
+  document.getElementById("v_batch").value = v.batch_number || "";
+  document.getElementById("v_notes").value = v.notes || "";
+  document.getElementById("v_certPreview").innerHTML = v.certificate_file ? `<a href="${v.certificate_file}" target="_blank">Current certificate →</a>` : "";
+  document.getElementById("vacModal").style.display = "flex";
+}
+
+function closeModal() { document.getElementById("vacModal").style.display = "none"; }
+
+document.getElementById("v_certDrop").addEventListener("click", () => document.getElementById("v_cert").click());
+document.getElementById("v_cert").addEventListener("change", (e) => {
+  const f = e.target.files[0];
+  if (f) document.getElementById("v_certPreview").textContent = `Selected: ${f.name}`;
+});
+
+document.getElementById("vacForm").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const btn = document.getElementById("saveBtn");
+  btn.disabled = true;
+  try {
+    const payload = {
+      vaccine_name: document.getElementById("v_name").value,
+      dose_number: document.getElementById("v_dose_number").value ? parseInt(document.getElementById("v_dose_number").value) : null,
+      date_administered: document.getElementById("v_date").value,
+      next_due_date: document.getElementById("v_next_due").value || null,
+      administered_at: document.getElementById("v_location").value || null,
+      batch_number: document.getElementById("v_batch").value || null,
+      notes: document.getElementById("v_notes").value || null,
+    };
+    let id = editingId;
+    if (!id) {
+      const created = await Api.createVaccination(payload);
+      id = created.id;
+      showToast("Vaccination added", "success");
+    } else {
+      await Api.updateVaccination(id, payload);
+      showToast("Vaccination updated", "success");
+    }
+    const file = document.getElementById("v_cert").files[0];
+    if (file) {
+      const fd = new FormData();
+      fd.append("certificate", file);
+      await Api.uploadVaccinationCert(id, fd);
+    }
+    closeModal();
+    loadVacs();
+  } catch (err) { showToast(err.message, "error"); }
+  finally { btn.disabled = false; }
+});
+
+async function deleteVac(id) {
+  if (!confirm("Delete this vaccination record?")) return;
+  try {
+    await Api.deleteVaccination(id);
+    showToast("Deleted", "success");
+    loadVacs();
+  } catch (err) { showToast(err.message, "error"); }
+}
+
+loadVacs();
+</script>
+</body>
+</html>

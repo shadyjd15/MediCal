@@ -5,14 +5,18 @@ from fastapi.staticfiles import StaticFiles
 
 from .database import Base, engine, SessionLocal
 from . import models, auth
-from .routers import auth_router, users_router, prescriptions_router, medicines_router, tags_router, dashboard_router
+from .routers import (
+    auth_router, users_router, prescriptions_router, medicines_router,
+    tags_router, dashboard_router, labtests_router, vaccinations_router,
+    ocr_router, export_router, version_router,
+)
 
-os.makedirs("uploads/medicines", exist_ok=True)
-os.makedirs("uploads/prescriptions", exist_ok=True)
+for d in ["uploads/medicines", "uploads/prescriptions", "uploads/lab_tests", "uploads/vaccinations"]:
+    os.makedirs(d, exist_ok=True)
 
 Base.metadata.create_all(bind=engine)
 
-app = FastAPI(title="MedTrack API")
+app = FastAPI(title="MediCal API")
 
 app.add_middleware(
     CORSMiddleware,
@@ -30,6 +34,11 @@ app.include_router(prescriptions_router.router)
 app.include_router(medicines_router.router)
 app.include_router(tags_router.router)
 app.include_router(dashboard_router.router)
+app.include_router(labtests_router.router)
+app.include_router(vaccinations_router.router)
+app.include_router(ocr_router.router)
+app.include_router(export_router.router)
+app.include_router(version_router.router)
 
 
 @app.get("/api/health")
@@ -39,7 +48,6 @@ def health():
 
 @app.on_event("startup")
 def seed_admin():
-    """Create a default admin account on first run if none exists."""
     db = SessionLocal()
     try:
         admin_exists = db.query(models.User).filter(models.User.role == models.RoleEnum.admin).first()

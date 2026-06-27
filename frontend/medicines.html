@@ -3,8 +3,9 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Medicines — MedTrack</title>
+<title>Medicines — MediCal</title>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<script src="/js/theme.js"></script>
 <link rel="stylesheet" href="/css/style.css" />
 </head>
 <body>
@@ -28,6 +29,10 @@
           <option value="">All statuses</option>
           <option value="true">Active only</option>
           <option value="false">Inactive only</option>
+        </select>
+        <select id="lowStockFilter">
+          <option value="">All stock levels</option>
+          <option value="true">Low stock only</option>
         </select>
         <button class="btn btn-secondary btn-sm" id="resetBtn">Reset</button>
       </div>
@@ -102,6 +107,37 @@
           <input type="text" id="m_tags" placeholder="e.g. fever, headache, cold (comma separated)" />
         </div>
 
+        <div class="form-grid">
+          <div class="field field-spaced">
+            <label>Quantity remaining</label>
+            <input type="number" id="m_quantity_remaining" placeholder="e.g. 20" />
+          </div>
+          <div class="field field-spaced">
+            <label>Low-stock alert threshold</label>
+            <input type="number" id="m_refill_threshold" placeholder="e.g. 5" />
+            <div class="helptext">You'll be alerted on the dashboard when remaining quantity drops to or below this.</div>
+          </div>
+        </div>
+
+        <div class="form-grid">
+          <div class="field field-spaced">
+            <label>Cost</label>
+            <input type="number" step="0.01" id="m_cost" placeholder="e.g. 12.50" />
+          </div>
+          <div class="field field-spaced">
+            <label>Payment method</label>
+            <select id="m_payment_method">
+              <option value="">—</option>
+              <option value="cash">Cash</option>
+              <option value="insurance">Insurance</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="field field-spaced">
+          <label><input type="checkbox" id="m_insurance_covered" style="width:auto;margin-right:6px;" />Covered by insurance</label>
+        </div>
+
         <div class="field field-spaced">
           <label><input type="checkbox" id="m_is_active" checked style="width:auto;margin-right:6px;" />Currently active / being taken</label>
         </div>
@@ -114,7 +150,7 @@
         <div class="field field-spaced">
           <label>Medicine photo</label>
           <input type="file" id="m_photo" accept="image/*" capture="environment" style="display:none;" />
-          <div class="file-drop" id="photoDrop">${'Tap to take a photo or upload an image of the medicine'}</div>
+          <div class="file-drop" id="photoDrop">Tap to take a photo or upload an image of the medicine</div>
           <img id="photoPreview" class="file-preview" style="display:none;" />
         </div>
 
@@ -138,28 +174,46 @@ let prescriptionsCache = [];
 
 const qInput = document.getElementById("qInput");
 const activeFilter = document.getElementById("activeFilter");
+const lowStockFilter = document.getElementById("lowStockFilter");
 let debounceTimer;
 qInput.addEventListener("input", () => { clearTimeout(debounceTimer); debounceTimer = setTimeout(loadMedicines, 300); });
 activeFilter.addEventListener("change", loadMedicines);
-document.getElementById("resetBtn").addEventListener("click", () => { qInput.value=""; activeFilter.value=""; loadMedicines(); });
+lowStockFilter.addEventListener("change", loadMedicines);
+document.getElementById("resetBtn").addEventListener("click", () => { qInput.value=""; activeFilter.value=""; lowStockFilter.value=""; loadMedicines(); });
 
 function medRow(m) {
   const statusBadge = m.is_active ? `<span class="badge badge-active">Active</span>` : `<span class="badge badge-inactive">Inactive</span>`;
+  const stockBadge = m.is_low_stock ? `<span class="badge badge-warning">Low stock</span>` : "";
+  const costInfo = m.cost ? ` · $${m.cost.toFixed(2)}${m.payment_method ? ` (${m.payment_method})` : ""}` : "";
   const tags = (m.tags || []).map(t => `<span class="tag">${t.name}</span>`).join("");
+  const refillControls = m.quantity_remaining != null ? `
+    <div style="display:flex;align-items:center;gap:6px;margin-top:6px;">
+      <button class="btn btn-secondary btn-sm" onclick="adjustRefill('${m.id}', -1)">−</button>
+      <span style="font-size:12.5px;font-weight:600;min-width:70px;text-align:center;">${m.quantity_remaining} left</span>
+      <button class="btn btn-secondary btn-sm" onclick="adjustRefill('${m.id}', 1)">+</button>
+    </div>` : "";
   return `
-  <div class="med-row">
+  <div class="med-row ${m.is_low_stock ? "low-stock-row" : ""}">
     <div class="med-thumb">${m.photo ? `<img src="${m.photo}"/>` : ICONS.pill}</div>
     <div class="med-main">
-      <div class="med-name">${m.name} ${statusBadge}</div>
-      <div class="med-meta">${m.composition} · ${m.dose}${m.frequency ? " · "+m.frequency : ""}</div>
+      <div class="med-name">${m.name} ${statusBadge} ${stockBadge}</div>
+      <div class="med-meta">${m.composition} · ${m.dose}${m.frequency ? " · "+m.frequency : ""}${costInfo}</div>
       <div class="med-meta">Dr. ${m.doctor_name || "—"} · ${m.hospital_name || "—"} · ${fmtDate(m.visit_date)}</div>
       <div class="chip-row">${tags}</div>
+      ${refillControls}
     </div>
     <div style="display:flex;gap:6px;">
       <button class="btn btn-secondary btn-sm" onclick="openEditMed('${m.id}')">Edit</button>
       <button class="btn btn-danger btn-sm" onclick="deleteMed('${m.id}')">Delete</button>
     </div>
   </div>`;
+}
+
+async function adjustRefill(id, delta) {
+  try {
+    await Api.adjustRefill(id, { delta });
+    loadMedicines();
+  } catch (err) { showToast(err.message, "error"); }
 }
 
 async function loadMedicines() {
@@ -169,6 +223,7 @@ async function loadMedicines() {
     const params = {};
     if (qInput.value.trim()) params.q = qInput.value.trim();
     if (activeFilter.value) params.active_only = activeFilter.value;
+    if (lowStockFilter.value) params.low_stock_only = lowStockFilter.value;
     const meds = await Api.listMedicines(params);
     if (!meds.length) {
       list.innerHTML = `<div class="empty-state">${ICONS.pill}<div>No medicines found. Try adjusting filters or add a new one.</div></div>`;
@@ -199,6 +254,7 @@ function openAddMed() {
   document.getElementById("medForm").reset();
   document.getElementById("photoPreview").style.display = "none";
   document.getElementById("m_is_active").checked = true;
+  document.getElementById("m_insurance_covered").checked = false;
   loadPrescriptionsIntoSelect();
   document.getElementById("medModal").style.display = "flex";
 }
@@ -220,6 +276,11 @@ async function openEditMed(id) {
     document.getElementById("m_start_date").value = m.start_date || "";
     document.getElementById("m_end_date").value = m.end_date || "";
     document.getElementById("m_tags").value = (m.tags || []).map(t => t.name).join(", ");
+    document.getElementById("m_quantity_remaining").value = m.quantity_remaining ?? "";
+    document.getElementById("m_refill_threshold").value = m.refill_threshold ?? "";
+    document.getElementById("m_cost").value = m.cost ?? "";
+    document.getElementById("m_payment_method").value = m.payment_method || "";
+    document.getElementById("m_insurance_covered").checked = !!m.insurance_covered;
     document.getElementById("m_is_active").checked = m.is_active;
     document.getElementById("m_notes").value = m.notes || "";
     const preview = document.getElementById("photoPreview");
@@ -263,6 +324,11 @@ document.getElementById("medForm").addEventListener("submit", async (e) => {
       fd.append("is_active", document.getElementById("m_is_active").checked);
       fd.append("notes", document.getElementById("m_notes").value);
       fd.append("tags", document.getElementById("m_tags").value);
+      if (document.getElementById("m_quantity_remaining").value) fd.append("quantity_remaining", document.getElementById("m_quantity_remaining").value);
+      if (document.getElementById("m_refill_threshold").value) fd.append("refill_threshold", document.getElementById("m_refill_threshold").value);
+      if (document.getElementById("m_cost").value) fd.append("cost", document.getElementById("m_cost").value);
+      if (document.getElementById("m_payment_method").value) fd.append("payment_method", document.getElementById("m_payment_method").value);
+      fd.append("insurance_covered", document.getElementById("m_insurance_covered").checked);
       const photoFile = document.getElementById("m_photo").files[0];
       if (photoFile) fd.append("photo", photoFile);
       await Api.createMedicine(fd);
@@ -280,6 +346,11 @@ document.getElementById("medForm").addEventListener("submit", async (e) => {
         is_active: document.getElementById("m_is_active").checked,
         notes: document.getElementById("m_notes").value,
         tags: document.getElementById("m_tags").value.split(",").map(s => s.trim()).filter(Boolean),
+        quantity_remaining: document.getElementById("m_quantity_remaining").value ? parseInt(document.getElementById("m_quantity_remaining").value) : null,
+        refill_threshold: document.getElementById("m_refill_threshold").value ? parseInt(document.getElementById("m_refill_threshold").value) : null,
+        cost: document.getElementById("m_cost").value ? parseFloat(document.getElementById("m_cost").value) : null,
+        payment_method: document.getElementById("m_payment_method").value || null,
+        insurance_covered: document.getElementById("m_insurance_covered").checked,
       };
       await Api.updateMedicine(editingId, payload);
       const photoFile = document.getElementById("m_photo").files[0];

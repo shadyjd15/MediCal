@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Reports — MediCal</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<script src="/js/theme.js"></script>
+<link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+<div class="app-shell">
+  <div id="sidebarMount"></div>
+  <div class="main-area">
+    <div class="topbar">
+      <div>
+        <h1>Reports</h1>
+        <div class="topbar-sub">Export your medication history, visits and spending</div>
+      </div>
+    </div>
+    <div class="content">
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:18px;">
+
+        <div class="card">
+          <div class="card-header"><h3>Medication history</h3></div>
+          <p class="topbar-sub" style="margin-bottom:14px;">All medicines you've logged, including composition, doses and dates.</p>
+          <div style="display:flex;gap:10px;">
+            <button class="btn btn-secondary" onclick="downloadExport('medicines.csv')">Export CSV</button>
+            <button class="btn btn-primary" onclick="downloadExport('medicines.pdf')">Export PDF</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header"><h3>Doctor visit history</h3></div>
+          <p class="topbar-sub" style="margin-bottom:14px;">Every visit with doctor, hospital, vitals and total cost.</p>
+          <div style="display:flex;gap:10px;">
+            <button class="btn btn-secondary" onclick="downloadExport('visits.csv')">Export CSV</button>
+            <button class="btn btn-primary" onclick="downloadExport('visits.pdf')">Export PDF</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header"><h3>Spending report</h3></div>
+          <p class="topbar-sub" style="margin-bottom:10px;">Itemized costs by category and payment method for a given year.</p>
+          <div class="field field-spaced" style="max-width:160px;">
+            <label>Year</label>
+            <input type="number" id="spendYear" value="2026" />
+          </div>
+          <div style="display:flex;gap:10px;">
+            <button class="btn btn-secondary" onclick="downloadExport('spending.csv', {year: document.getElementById('spendYear').value})">Export CSV</button>
+            <button class="btn btn-primary" onclick="downloadExport('spending.pdf', {year: document.getElementById('spendYear').value})">Export PDF</button>
+          </div>
+        </div>
+
+      </div>
+
+      <div class="card" style="margin-top:18px;">
+        <div class="card-header"><h3>Spending by category (this year)</h3></div>
+        <div id="categoryBreakdown"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="/js/api.js"></script>
+<script src="/js/sidebar.js"></script>
+<script>
+Auth.requireAuth();
+mountSidebar("reports");
+document.getElementById("spendYear").value = new Date().getFullYear();
+
+const CATEGORY_LABELS = { reception: "Reception", pharmacy: "Pharmacy", laboratory: "Laboratory",
+  xray: "X-Ray / Imaging", consultation: "Consultation", procedure: "Procedure", other: "Other" };
+
+async function loadBreakdown() {
+  const box = document.getElementById("categoryBreakdown");
+  try {
+    const s = await Api.dashboardStats();
+    const entries = Object.entries(s.spending.by_category || {});
+    if (!entries.length) {
+      box.innerHTML = `<div class="empty-state">${ICONS.report}<div>No cost data logged yet this year.</div></div>`;
+      return;
+    }
+    const max = Math.max(...entries.map(([, v]) => v));
+    box.innerHTML = entries.map(([cat, amt]) => `
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:10px;">
+        <div style="width:120px;font-size:12.5px;color:var(--text-soft);">${CATEGORY_LABELS[cat] || cat}</div>
+        <div style="flex:1;background:var(--surface-2);border-radius:99px;height:9px;overflow:hidden;border:1px solid var(--border);">
+          <div style="width:${(amt/max)*100}%;background:var(--teal);height:100%;"></div>
+        </div>
+        <div style="width:70px;text-align:right;font-size:12.5px;font-weight:600;">$${amt.toFixed(2)}</div>
+      </div>
+    `).join("");
+  } catch (err) { showToast(err.message, "error"); }
+}
+loadBreakdown();
+</script>
+</body>
+</html>

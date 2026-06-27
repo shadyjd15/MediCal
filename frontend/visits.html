@@ -3,8 +3,9 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Doctor Visits — MedTrack</title>
+<title>Doctor Visits — MediCal</title>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<script src="/js/theme.js"></script>
 <link rel="stylesheet" href="/css/style.css" />
 </head>
 <body>
@@ -14,7 +15,7 @@
     <div class="topbar">
       <div>
         <h1>Doctor Visits</h1>
-        <div class="topbar-sub">Track every visit and its prescription</div>
+        <div class="topbar-sub">Track every visit, its costs and vitals</div>
       </div>
       <button class="btn btn-primary" id="addVisitBtn">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
@@ -36,6 +37,18 @@
     </div>
     <form id="visitForm">
       <div class="modal-body">
+
+        <div class="field field-spaced">
+          <label>Prescription photo / scan</label>
+          <input type="file" id="v_image" accept="image/*,.pdf" capture="environment" style="display:none;" />
+          <div class="file-drop" id="visitPhotoDrop">Tap to capture or upload the prescription</div>
+          <img id="visitPhotoPreview" class="file-preview" style="display:none;" />
+          <button type="button" class="btn btn-secondary btn-sm" id="ocrBtn" style="margin-top:8px;display:none;">
+            🔎 Scan with OCR to auto-fill
+          </button>
+          <div class="helptext" id="ocrStatus"></div>
+        </div>
+
         <div class="form-grid">
           <div class="field field-spaced">
             <label>Doctor name <span class="req">*</span></label>
@@ -56,15 +69,36 @@
             <input type="date" id="v_next_date" />
           </div>
         </div>
+
+        <div class="field field-spaced">
+          <label>Default payment method for this visit</label>
+          <select id="v_payment_method">
+            <option value="cash">Cash</option>
+            <option value="insurance">Insurance</option>
+          </select>
+          <div class="helptext">Used as the default when adding cost items below — each item can still be changed individually.</div>
+        </div>
+
+        <div class="field field-spaced">
+          <label>Vitals recorded during this visit</label>
+          <div class="form-grid" style="grid-template-columns:1fr 1fr 1fr 1fr;">
+            <div class="field"><label style="font-weight:500;">BP Systolic</label><input type="number" id="v_bp_sys" placeholder="120" /></div>
+            <div class="field"><label style="font-weight:500;">BP Diastolic</label><input type="number" id="v_bp_dia" placeholder="80" /></div>
+            <div class="field"><label style="font-weight:500;">Weight (kg)</label><input type="number" step="0.1" id="v_weight" placeholder="70" /></div>
+            <div class="field"><label style="font-weight:500;">Heart rate</label><input type="number" id="v_hr" placeholder="72" /></div>
+          </div>
+        </div>
+
+        <div class="field field-spaced">
+          <label>Costs incurred (reception, pharmacy, lab, x-ray, etc.)</label>
+          <div id="costItemsContainer"></div>
+          <button type="button" class="btn btn-secondary btn-sm" id="addCostItemBtn">+ Add cost item</button>
+          <div class="helptext" id="costTotalLabel" style="margin-top:6px;font-weight:600;"></div>
+        </div>
+
         <div class="field field-spaced">
           <label>Notes</label>
           <textarea id="v_notes" placeholder="Diagnosis, advice, follow-up instructions…"></textarea>
-        </div>
-        <div class="field field-spaced">
-          <label>Prescription photo / scan</label>
-          <input type="file" id="v_image" accept="image/*,.pdf" capture="environment" style="display:none;" />
-          <div class="file-drop" id="visitPhotoDrop">Tap to capture or upload the prescription</div>
-          <img id="visitPhotoPreview" class="file-preview" style="display:none;" />
         </div>
       </div>
       <div class="modal-footer">
@@ -92,15 +126,19 @@
 Auth.requireAuth();
 mountSidebar("visits");
 
+const CATEGORY_LABELS = { reception: "Reception", pharmacy: "Pharmacy", laboratory: "Laboratory",
+  xray: "X-Ray / Imaging", consultation: "Consultation", procedure: "Procedure", other: "Other" };
+
 function visitRow(p) {
   const medCount = (p.medicines || []).length;
+  const total = p.total_cost || 0;
   return `
   <div class="med-row">
     <div class="med-thumb">${p.prescription_image ? `<img src="${p.prescription_image}"/>` : ICONS.prescription}</div>
     <div class="med-main">
-      <div class="med-name">Dr. ${p.doctor_name}</div>
+      <div class="med-name">Dr. ${p.doctor_name} ${p.payment_method ? `<span class="badge ${p.payment_method === 'insurance' ? 'badge-active' : 'badge-warning'}">${p.payment_method}</span>` : ""}</div>
       <div class="med-meta">${p.hospital_name} · ${fmtDate(p.visit_date)}${p.next_visit_date ? ` · Next visit: ${fmtDate(p.next_visit_date)}` : ""}</div>
-      <div class="med-meta">${medCount} medicine${medCount === 1 ? "" : "s"} recorded</div>
+      <div class="med-meta">${medCount} medicine${medCount === 1 ? "" : "s"}${total ? ` · $${total.toFixed(2)} spent` : ""}</div>
     </div>
     <div style="display:flex;gap:6px;">
       <button class="btn btn-secondary btn-sm" onclick="viewVisit('${p.id}')">View</button>
@@ -137,11 +175,31 @@ function viewVisit(id) {
       </div>
     </div>`).join("") || `<div class="empty-state">${ICONS.pill}<div>No medicines added for this visit yet.</div></div>`;
 
+  const costRows = (p.cost_items || []).map(c => `
+    <tr>
+      <td>${CATEGORY_LABELS[c.category] || c.category}</td>
+      <td><span class="badge ${c.payment_method === 'insurance' ? 'badge-active' : 'badge-warning'}">${c.payment_method}</span></td>
+      <td>$${c.amount.toFixed(2)}</td>
+      <td>${c.description || ""}</td>
+    </tr>`).join("");
+
+  const vitalsHtml = (p.bp_systolic || p.weight_kg || p.heart_rate) ? `
+    <div class="vitals-grid" style="margin:10px 0;">
+      <div class="vital-box"><div class="v-value">${p.bp_systolic && p.bp_diastolic ? `${p.bp_systolic}/${p.bp_diastolic}` : "—"}</div><div class="v-label">Blood pressure</div></div>
+      <div class="vital-box"><div class="v-value">${p.weight_kg ? p.weight_kg + " kg" : "—"}</div><div class="v-label">Weight</div></div>
+      <div class="vital-box"><div class="v-value">${p.heart_rate ? p.heart_rate + " bpm" : "—"}</div><div class="v-label">Heart rate</div></div>
+    </div>` : "";
+
   document.getElementById("viewModalBody").innerHTML = `
     <p style="color:var(--text-soft);font-size:13px;"><strong>Hospital:</strong> ${p.hospital_name}</p>
     ${p.next_visit_date ? `<p style="color:var(--text-soft);font-size:13px;"><strong>Next visit:</strong> ${fmtDate(p.next_visit_date)}</p>` : ""}
     ${p.notes ? `<p style="color:var(--text-soft);font-size:13px;"><strong>Notes:</strong> ${p.notes}</p>` : ""}
     ${p.prescription_image ? `<img src="${p.prescription_image}" style="max-width:100%;border-radius:10px;margin:10px 0;border:1px solid var(--border);" />` : ""}
+    ${vitalsHtml}
+    ${(p.cost_items || []).length ? `
+      <h4 style="margin:14px 0 8px;font-size:14px;">Costs (Total: $${(p.total_cost||0).toFixed(2)})</h4>
+      <table class="data-table"><thead><tr><th>Category</th><th>Payment</th><th>Amount</th><th>Note</th></tr></thead><tbody>${costRows}</tbody></table>
+    ` : ""}
     <h4 style="margin:14px 0 8px;font-size:14px;">Medicines from this visit</h4>
     <div class="med-list">${meds}</div>
   `;
@@ -157,9 +215,45 @@ async function deleteVisit(id) {
   } catch (err) { showToast(err.message, "error"); }
 }
 
+// ---------- Cost item rows ----------
+let costItemCount = 0;
+function addCostItemRow(prefill = {}) {
+  costItemCount++;
+  const id = `cost_${costItemCount}`;
+  const defaultPayment = document.getElementById("v_payment_method").value;
+  const row = document.createElement("div");
+  row.className = "cost-row";
+  row.id = id;
+  row.innerHTML = `
+    <select class="ci-category">
+      ${Object.entries(CATEGORY_LABELS).map(([k, v]) => `<option value="${k}" ${prefill.category === k ? "selected" : ""}>${v}</option>`).join("")}
+    </select>
+    <select class="ci-payment">
+      <option value="cash" ${defaultPayment === "cash" ? "selected" : ""}>Cash</option>
+      <option value="insurance" ${defaultPayment === "insurance" ? "selected" : ""}>Insurance</option>
+    </select>
+    <input type="number" step="0.01" class="ci-amount" placeholder="Amount" oninput="updateCostTotal()" />
+    <input type="text" class="ci-desc" placeholder="Description (optional)" />
+    <button type="button" class="btn btn-ghost btn-icon btn-sm" onclick="document.getElementById('${id}').remove(); updateCostTotal();">✕</button>
+  `;
+  document.getElementById("costItemsContainer").appendChild(row);
+}
+
+function updateCostTotal() {
+  let total = 0;
+  document.querySelectorAll("#costItemsContainer .ci-amount").forEach(inp => { total += parseFloat(inp.value) || 0; });
+  document.getElementById("costTotalLabel").textContent = total > 0 ? `Total so far: $${total.toFixed(2)}` : "";
+}
+
+document.getElementById("addCostItemBtn").addEventListener("click", () => addCostItemRow());
+
 document.getElementById("addVisitBtn").addEventListener("click", () => {
   document.getElementById("visitForm").reset();
   document.getElementById("visitPhotoPreview").style.display = "none";
+  document.getElementById("ocrBtn").style.display = "none";
+  document.getElementById("ocrStatus").textContent = "";
+  document.getElementById("costItemsContainer").innerHTML = "";
+  document.getElementById("costTotalLabel").textContent = "";
   document.getElementById("visitModal").style.display = "flex";
 });
 function closeVisitModal() { document.getElementById("visitModal").style.display = "none"; }
@@ -172,6 +266,28 @@ document.getElementById("v_image").addEventListener("change", (e) => {
     const preview = document.getElementById("visitPhotoPreview");
     preview.src = URL.createObjectURL(file);
     preview.style.display = "block";
+    document.getElementById("ocrBtn").style.display = "inline-flex";
+  }
+});
+
+document.getElementById("ocrBtn").addEventListener("click", async () => {
+  const file = document.getElementById("v_image").files[0];
+  if (!file) return;
+  const statusEl = document.getElementById("ocrStatus");
+  statusEl.textContent = "Scanning prescription…";
+  try {
+    const fd = new FormData();
+    fd.append("file", file);
+    const result = await Api.ocrScan(fd);
+    if (result.guessed_doctor_name && !document.getElementById("v_doctor").value) {
+      document.getElementById("v_doctor").value = result.guessed_doctor_name.replace(/^Dr\.?\s*/i, "Dr. ");
+    }
+    if (result.guessed_hospital_name && !document.getElementById("v_hospital").value) {
+      document.getElementById("v_hospital").value = result.guessed_hospital_name;
+    }
+    statusEl.textContent = "Auto-fill applied where possible — please review before saving.";
+  } catch (err) {
+    statusEl.textContent = err.message || "OCR scan failed. You can still fill in the fields manually.";
   }
 });
 
@@ -185,7 +301,27 @@ document.getElementById("visitForm").addEventListener("submit", async (e) => {
     fd.append("hospital_name", document.getElementById("v_hospital").value);
     fd.append("visit_date", document.getElementById("v_date").value);
     if (document.getElementById("v_next_date").value) fd.append("next_visit_date", document.getElementById("v_next_date").value);
+    fd.append("payment_method", document.getElementById("v_payment_method").value);
+    if (document.getElementById("v_bp_sys").value) fd.append("bp_systolic", document.getElementById("v_bp_sys").value);
+    if (document.getElementById("v_bp_dia").value) fd.append("bp_diastolic", document.getElementById("v_bp_dia").value);
+    if (document.getElementById("v_weight").value) fd.append("weight_kg", document.getElementById("v_weight").value);
+    if (document.getElementById("v_hr").value) fd.append("heart_rate", document.getElementById("v_hr").value);
     fd.append("notes", document.getElementById("v_notes").value);
+
+    const costItems = [];
+    document.querySelectorAll("#costItemsContainer .cost-row").forEach(row => {
+      const amount = parseFloat(row.querySelector(".ci-amount").value);
+      if (amount > 0) {
+        costItems.push({
+          category: row.querySelector(".ci-category").value,
+          payment_method: row.querySelector(".ci-payment").value,
+          amount: amount,
+          description: row.querySelector(".ci-desc").value || null,
+        });
+      }
+    });
+    if (costItems.length) fd.append("cost_items", JSON.stringify(costItems));
+
     const imgFile = document.getElementById("v_image").files[0];
     if (imgFile) fd.append("prescription_image", imgFile);
     await Api.createPrescription(fd);

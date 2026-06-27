@@ -65,12 +65,15 @@ const Api = {
   updateUser: (id, payload) => apiRequest(`/users/${id}`, { method: "PUT", body: payload }),
   deleteUser: (id) => apiRequest(`/users/${id}`, { method: "DELETE" }),
   changeMyPassword: (password) => apiRequest("/users/me/password", { method: "PUT", body: { password } }),
+  updateMyTheme: (theme_preference) => apiRequest("/users/me/theme", { method: "PUT", body: { theme_preference } }),
 
   listPrescriptions: () => apiRequest("/prescriptions"),
   getPrescription: (id) => apiRequest(`/prescriptions/${id}`),
   createPrescription: (formData) => apiRequest("/prescriptions", { method: "POST", body: formData, isForm: true }),
   updatePrescription: (id, payload) => apiRequest(`/prescriptions/${id}`, { method: "PUT", body: payload }),
   deletePrescription: (id) => apiRequest(`/prescriptions/${id}`, { method: "DELETE" }),
+  addCostItem: (prescId, payload) => apiRequest(`/prescriptions/${prescId}/cost-items`, { method: "POST", body: payload }),
+  deleteCostItem: (prescId, itemId) => apiRequest(`/prescriptions/${prescId}/cost-items/${itemId}`, { method: "DELETE" }),
 
   listMedicines: (params = {}) => {
     const qs = new URLSearchParams(Object.entries(params).filter(([, v]) => v !== "" && v != null)).toString();
@@ -81,11 +84,48 @@ const Api = {
   deleteMedicine: (id) => apiRequest(`/medicines/${id}`, { method: "DELETE" }),
   uploadMedicinePhoto: (id, formData) => apiRequest(`/medicines/${id}/photo`, { method: "POST", body: formData, isForm: true }),
   findByComposition: (composition) => apiRequest(`/medicines/by-composition/${encodeURIComponent(composition)}`),
+  adjustRefill: (id, payload) => apiRequest(`/medicines/${id}/refill`, { method: "POST", body: payload }),
 
   listTags: (q = "") => apiRequest(`/tags${q ? `?q=${encodeURIComponent(q)}` : ""}`),
 
   dashboardStats: () => apiRequest("/dashboard/stats"),
+
+  listLabTests: () => apiRequest("/lab-tests"),
+  createLabTest: (formData) => apiRequest("/lab-tests", { method: "POST", body: formData, isForm: true }),
+  updateLabTest: (id, payload) => apiRequest(`/lab-tests/${id}`, { method: "PUT", body: payload }),
+  uploadLabTestFile: (id, formData) => apiRequest(`/lab-tests/${id}/file`, { method: "POST", body: formData, isForm: true }),
+  deleteLabTest: (id) => apiRequest(`/lab-tests/${id}`, { method: "DELETE" }),
+
+  listVaccinations: () => apiRequest("/vaccinations"),
+  createVaccination: (payload) => apiRequest("/vaccinations", { method: "POST", body: payload }),
+  updateVaccination: (id, payload) => apiRequest(`/vaccinations/${id}`, { method: "PUT", body: payload }),
+  uploadVaccinationCert: (id, formData) => apiRequest(`/vaccinations/${id}/certificate`, { method: "POST", body: formData, isForm: true }),
+  deleteVaccination: (id) => apiRequest(`/vaccinations/${id}`, { method: "DELETE" }),
+
+  ocrScan: (formData) => apiRequest("/ocr/scan", { method: "POST", body: formData, isForm: true }),
+
+  getVersion: () => apiRequest("/version"),
 };
+
+function exportUrl(path, params = {}) {
+  const qs = new URLSearchParams(Object.entries(params).filter(([, v]) => v !== "" && v != null)).toString();
+  return `${API_BASE}/export/${path}${qs ? `?${qs}` : ""}`;
+}
+
+async function downloadExport(path, params = {}) {
+  const token = Auth.getToken();
+  const res = await fetch(exportUrl(path, params), { headers: { Authorization: `Bearer ${token}` } });
+  if (!res.ok) { showToast("Export failed", "error"); return; }
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = path.replace(".csv", "").replace(".pdf", "") + (path.includes(".csv") ? ".csv" : ".pdf");
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
 
 function showToast(message, type = "default") {
   let stack = document.querySelector(".toast-stack");

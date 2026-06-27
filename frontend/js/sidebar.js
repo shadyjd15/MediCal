@@ -9,6 +9,11 @@ const ICONS = {
   logout: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>`,
   collapse: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>`,
   camera: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 8h3l2-3h6l2 3h3a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z"/><circle cx="12" cy="13" r="3.5"/></svg>`,
+  vaccine: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M18 3l3 3-2 2-1-1-7 7 1 1-2 2-1-1-2 2-2-2 2-2-1-1 2-2 1 1 7-7-1-1 2-2z"/><path d="M9.5 14.5l-3 3"/></svg>`,
+  flask: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 2h6M10 2v7l-5.5 9a2 2 0 0 0 1.7 3h11.6a2 2 0 0 0 1.7-3L14 9V2"/><path d="M7 16h10"/></svg>`,
+  report: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M8 17l2.5-3 3 2L18 11"/><rect x="3" y="3" width="18" height="18" rx="2"/></svg>`,
+  sun: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="4.5"/><path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"/></svg>`,
+  moon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M20 14.5A8.5 8.5 0 1 1 9.5 4a7 7 0 0 0 10.5 10.5z"/></svg>`,
 };
 
 function renderSidebar(activePage) {
@@ -19,7 +24,10 @@ function renderSidebar(activePage) {
     { key: "dashboard", label: "Dashboard", href: "/dashboard.html", icon: ICONS.dashboard },
     { key: "medicines", label: "Medicines", href: "/medicines.html", icon: ICONS.pill },
     { key: "visits", label: "Doctor Visits", href: "/visits.html", icon: ICONS.visits },
+    { key: "labtests", label: "Lab Tests & Imaging", href: "/lab-tests.html", icon: ICONS.flask },
+    { key: "vaccinations", label: "Vaccinations", href: "/vaccinations.html", icon: ICONS.vaccine },
     { key: "search", label: "Search", href: "/search.html", icon: ICONS.search },
+    { key: "reports", label: "Reports", href: "/reports.html", icon: ICONS.report },
   ];
   if (isAdmin) {
     navItems.push({ key: "users", label: "Manage Users", href: "/users.html", icon: ICONS.users });
@@ -32,15 +40,20 @@ function renderSidebar(activePage) {
     </a>
   `).join("");
 
+  const isDark = document.documentElement.getAttribute("data-theme") === "dark";
+
   return `
   <aside class="sidebar" id="sidebar">
     <button class="collapse-btn" id="collapseBtn" title="Collapse sidebar">${ICONS.collapse}</button>
     <div class="sidebar-brand">
-      <div class="logo-mark">M</div>
-      <div class="brand-name">MedTrack</div>
+      <div class="logo-mark"><img src="/assets/logo.png" alt="MediCal logo" /></div>
+      <div class="brand-name">MediCal</div>
     </div>
     <nav class="sidebar-nav">${navHtml}</nav>
     <div class="sidebar-footer">
+      <button class="theme-toggle" onclick="toggleTheme()">
+        ${isDark ? ICONS.sun : ICONS.moon}<span class="nav-label" id="themeToggleLabel">${isDark ? "Light mode" : "Dark mode"}</span>
+      </button>
       <div class="user-chip">
         <div class="user-avatar">${initials(user.full_name || user.username)}</div>
         <div class="user-meta">
@@ -51,6 +64,10 @@ function renderSidebar(activePage) {
       <a class="nav-item" href="#" onclick="Auth.logout();return false;" style="margin-top:6px;">
         ${ICONS.logout}<span class="nav-label">Log out</span>
       </a>
+      <div class="version-footer">
+        <span id="versionLabel">v…</span>
+        <span id="updatePill"></span>
+      </div>
     </div>
   </aside>`;
 }
@@ -66,4 +83,31 @@ function mountSidebar(activePage) {
     sidebar.classList.toggle("collapsed");
     localStorage.setItem(COLLAPSE_KEY, sidebar.classList.contains("collapsed") ? "1" : "0");
   });
+  checkVersion();
+}
+
+async function checkVersion() {
+  const label = document.getElementById("versionLabel");
+  const pill = document.getElementById("updatePill");
+  if (!label) return;
+  try {
+    const info = await apiRequest("/version");
+    label.textContent = `v${info.version}`;
+    label.title = "Current installed version";
+    if (info.repo) {
+      try {
+        const ghRes = await fetch(`https://api.github.com/repos/${info.repo}/releases/latest`);
+        if (ghRes.ok) {
+          const gh = await ghRes.json();
+          const latest = (gh.tag_name || "").replace(/^v/i, "");
+          if (latest && latest !== info.version) {
+            pill.innerHTML = `<span class="update-pill" title="Latest: v${latest}">Update available</span>`;
+            pill.querySelector(".update-pill").addEventListener("click", () => window.open(gh.html_url || `https://github.com/${info.repo}/releases/latest`, "_blank"));
+          }
+        }
+      } catch (e) { /* offline or repo not public yet — silently skip */ }
+    }
+  } catch (e) {
+    label.textContent = "";
+  }
 }

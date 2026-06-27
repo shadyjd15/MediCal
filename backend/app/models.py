@@ -4,7 +4,7 @@ from datetime import datetime, date
 
 from sqlalchemy import (
     Column, String, Integer, Boolean, Date, DateTime, ForeignKey,
-    Table, Text, Enum
+    Table, Text, Enum, Float
 )
 from sqlalchemy.orm import relationship
 from .database import Base
@@ -17,6 +17,26 @@ def gen_uuid():
 class RoleEnum(str, enum.Enum):
     admin = "admin"
     user = "user"
+
+
+class PaymentMethodEnum(str, enum.Enum):
+    cash = "cash"
+    insurance = "insurance"
+
+
+class CostCategoryEnum(str, enum.Enum):
+    reception = "reception"
+    pharmacy = "pharmacy"
+    laboratory = "laboratory"
+    xray = "xray"
+    consultation = "consultation"
+    procedure = "procedure"
+    other = "other"
+
+
+class LabTestTypeEnum(str, enum.Enum):
+    lab = "lab"
+    imaging = "imaging"
 
 
 # Many-to-many: medicine <-> symptom tags
@@ -38,9 +58,11 @@ class User(Base):
     hashed_password = Column(String, nullable=False)
     role = Column(Enum(RoleEnum), default=RoleEnum.user, nullable=False)
     is_active = Column(Boolean, default=True)
+    theme_preference = Column(String, default="light")  # light | dark
     created_at = Column(DateTime, default=datetime.utcnow)
 
     prescriptions = relationship("Prescription", back_populates="user", cascade="all, delete-orphan")
+    vaccinations = relationship("Vaccination", back_populates="user", cascade="all, delete-orphan")
 
 
 class SymptomTag(Base):
@@ -64,10 +86,37 @@ class Prescription(Base):
     next_visit_date = Column(Date, nullable=True)
     notes = Column(Text, nullable=True)
     prescription_image = Column(String, nullable=True)  # path to uploaded scan/photo
+
+    # Payment / cost
+    payment_method = Column(Enum(PaymentMethodEnum), nullable=True)  # overall default for the visit
+
+    # Vitals captured during this visit
+    bp_systolic = Column(Integer, nullable=True)
+    bp_diastolic = Column(Integer, nullable=True)
+    weight_kg = Column(Float, nullable=True)
+    heart_rate = Column(Integer, nullable=True)
+
     created_at = Column(DateTime, default=datetime.utcnow)
 
     user = relationship("User", back_populates="prescriptions")
     medicines = relationship("Medicine", back_populates="prescription", cascade="all, delete-orphan")
+    cost_items = relationship("CostItem", back_populates="prescription", cascade="all, delete-orphan")
+    lab_tests = relationship("LabTest", back_populates="prescription", cascade="all, delete-orphan")
+
+
+class CostItem(Base):
+    """Itemized spend for a visit, e.g. reception fee, pharmacy bill, lab fee, x-ray fee."""
+    __tablename__ = "cost_items"
+
+    id = Column(String, primary_key=True, default=gen_uuid)
+    prescription_id = Column(String, ForeignKey("prescriptions.id"), nullable=False)
+    category = Column(Enum(CostCategoryEnum), nullable=False, default=CostCategoryEnum.other)
+    payment_method = Column(Enum(PaymentMethodEnum), nullable=False, default=PaymentMethodEnum.cash)
+    amount = Column(Float, nullable=False)
+    description = Column(String, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    prescription = relationship("Prescription", back_populates="cost_items")
 
 
 class Medicine(Base):
@@ -87,7 +136,53 @@ class Medicine(Base):
     is_active = Column(Boolean, default=True)  # currently being taken
     photo = Column(String, nullable=True)  # path to medicine photo
     notes = Column(Text, nullable=True)
+
+    # Refill tracking
+    quantity_remaining = Column(Integer, nullable=True)
+    refill_threshold = Column(Integer, nullable=True)  # alert when remaining <= this
+
+    # Cost / insurance
+    cost = Column(Float, nullable=True)
+    payment_method = Column(Enum(PaymentMethodEnum), nullable=True)
+    insurance_covered = Column(Boolean, default=False)
+
     created_at = Column(DateTime, default=datetime.utcnow)
 
     prescription = relationship("Prescription", back_populates="medicines")
     tags = relationship("SymptomTag", secondary=medicine_tags, back_populates="medicines")
+
+
+class LabTest(Base):
+    """Lab tests / imaging requested by a physician during a visit."""
+    __tablename__ = "lab_tests"
+
+    id = Column(String, primary_key=True, default=gen_uuid)
+    prescription_id = Column(String, ForeignKey("prescriptions.id"), nullable=False)
+    test_name = Column(String, nullable=False)  # e.g. "Complete Blood Count", "Chest X-Ray"
+    test_type = Column(Enum(LabTestTypeEnum), nullable=False, default=LabTestTypeEnum.lab)
+    test_date = Column(Date, nullable=True)
+    result_summary = Column(Text, nullable=True)
+    file_path = Column(String, nullable=True)  # link to result file (PDF/image)
+    is_completed = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    prescription = relationship("Prescription", back_populates="lab_tests")
+
+
+class Vaccination(Base):
+    """Vaccination records, tracked separately from prescriptions/visits."""
+    __tablename__ = "vaccinations"
+
+    id = Column(String, primary_key=True, default=gen_uuid)
+    user_id = Column(String, ForeignKey("users.id"), nullable=False)
+    vaccine_name = Column(String, nullable=False, index=True)
+    dose_number = Column(Integer, nullable=True)  # 1st dose, 2nd dose, booster, etc.
+    date_administered = Column(Date, nullable=False)
+    next_due_date = Column(Date, nullable=True)
+    administered_at = Column(String, nullable=True)  # hospital/clinic
+    batch_number = Column(String, nullable=True)
+    notes = Column(Text, nullable=True)
+    certificate_file = Column(String, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    user = relationship("User", back_populates="vaccinations")
