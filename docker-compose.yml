@@ -1,0 +1,46 @@
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: medtrack_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: medtrack
+      POSTGRES_PASSWORD: medtrack
+      POSTGRES_DB: medtrack
+    volumes:
+      - medtrack_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U medtrack"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build: ./backend
+    container_name: medtrack_backend
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://medtrack:medtrack@db:5432/medtrack
+      SECRET_KEY: ${SECRET_KEY:-please-change-this-secret-key}
+      DEFAULT_ADMIN_USERNAME: ${DEFAULT_ADMIN_USERNAME:-admin}
+      DEFAULT_ADMIN_PASSWORD: ${DEFAULT_ADMIN_PASSWORD:-admin123}
+    volumes:
+      - medtrack_uploads:/app/uploads
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+
+  frontend:
+    build: ./frontend
+    container_name: medtrack_frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "8080:80"
+
+volumes:
+  medtrack_db_data:
+  medtrack_uploads:
